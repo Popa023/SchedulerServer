@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <data-source source="LOCAL" name="@scheduler.ctxuo4jlqpyv.eu-central-1.rds.amazonaws.com" uuid="89a90de8-b301-45a5-82a5-c5e4443deab4">
+      <driver-ref>mysql.8</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.mysql.cj.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:mysql://scheduler.ctxuo4jlqpyv.eu-central-1.rds.amazonaws.com:3369</jdbc-url>
+    </data-source>
+  </component>
+</project>
