@@ -1,5 +1,5 @@
 from datetime import timedelta
-
+from flask_cors import CORS
 from flask import Flask, request, jsonify, make_response
 from flask_sqlalchemy import SQLAlchemy
 from marshmallow import fields
@@ -8,13 +8,16 @@ from sqlalchemy import Enum, ForeignKey, String, Time
 from datetime import time
 import enum
 import datetime
+from Models import Teacher
 
 from sqlalchemy.orm import relationship
 
 app = Flask('scheduler')
 app.config[
     'SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:masterpsw@scheduler.ctxuo4jlqpyv.eu-central-1.rds.amazonaws.com:3369/scheduler'
+CORS(app)
 db = SQLAlchemy(app)
+
 
 
 # _______Enums_______
@@ -124,6 +127,7 @@ class Event(db.Model):
     __tablename__ = "events"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     day = db.Column(db.Integer)
+    length = db.Column(db.Time)
     start = db.Column(db.Time)
     activity_id = db.Column(db.Integer, ForeignKey('activities.id'))
     classroom_id = db.Column(db.Integer, ForeignKey('classrooms.id'))
@@ -140,12 +144,13 @@ class Event(db.Model):
         db.session.commit()
         return self
 
-    def __init__(self, day, start, activity_id, classroom_id, teacher_id):
+    def __init__(self, day, start, length, activity_id, classroom_id, teacher_id):
         self.day = day
         self.start = start
         self.activity_id = activity_id
         self.classroom_id = classroom_id
         self.teacher_id = teacher_id
+        self.length = length
 
     def __repr__(self):
         return '' % self.id
@@ -230,6 +235,7 @@ class EventSchema(ModelSchema):
     activity_id = fields.Number()
     classroom_id = fields.Number()
     teacher_id = fields.Number()
+    length = fields.Time()
 
 
 class GroupSchema(ModelSchema):
@@ -498,12 +504,16 @@ def get_event_by_id(id):
 def update_event_by_id(id):
     data = request.get_json()
     get_event = Event.query.get(id)
-    if data.get('id'):
-        get_event.name = data['id']
-    db.session.add(get_event)
-    db.session.commit()
-    event_schema = EventSchema(only=['id', 'day', 'start', 'activity_id', 'classroom_id', 'teacher_id'])
+    event_schema = EventSchema(
+        only=['id', 'day', 'start', 'length', 'activity_id', 'classroom_id', 'teacher_id'])
     event = event_schema.dump(get_event)
+    if data.get('id'):
+        if get_event.id == int(data['id']):
+            get_event.start = data['start']
+            get_event.day = data['day']
+            get_event.length = data['length']
+            db.session.add(get_event)
+            db.session.commit()
     return make_response(jsonify({"event": event}))
 
 
@@ -519,7 +529,7 @@ def delete_event_by_id(id):
 def create_event():
     data = request.get_json(force=True)
     event_schema = EventSchema()
-    event = Event(data.get("day"), data.get("start"), data.get("activity_id"), data.get("classroom_id"),
+    event = Event(data.get("day"), data.get("start"), data.get("length"), data.get("activity_id"), data.get("classroom_id"),
                   data.get("teacher_id"))
     result = event_schema.dump(event.create())
     return make_response(jsonify({"event": result}), 200)
