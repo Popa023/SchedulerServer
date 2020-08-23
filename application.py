@@ -4,42 +4,17 @@ from flask import Flask, request, jsonify, make_response
 from flask_sqlalchemy import SQLAlchemy
 from marshmallow import fields
 from marshmallow_sqlalchemy import ModelSchema
-from sqlalchemy import Enum, ForeignKey, String, Time
-from datetime import time
-import enum
+from sqlalchemy import ForeignKey
 import datetime
-from Models import Teacher
+from json import dumps
 
-from sqlalchemy.orm import relationship
 
 app = Flask('scheduler')
 app.config[
-    'SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:masterpsw@scheduler.ctxuo4jlqpyv.eu-central-1.rds.amazonaws.com:3369/scheduler'
+    'SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:masterpsw@scheduler.ctxuo4jlqpyv.eu-central-1.rds.amazonaws' \
+                                 '.com:3369/scheduler'
 CORS(app)
 db = SQLAlchemy(app)
-
-
-
-# _______Enums_______
-class ActivityType(enum.Enum):
-    not_available = "NOT_AVAILABLE"
-    course = "COURSE"
-    seminar = "SEMINAR"
-    laboratory = "LABORATORY"
-
-
-class Specialization(enum.Enum):
-    series_A = "SERIES_A"
-    series_B = "SERIES_B"
-    EA = "EA"
-    TST = "TST"
-
-
-# _______Association_Tables_______
-event_group_association_table = db.Table('events_groups', db.Model.metadata,
-                                         db.Column('event_id', db.Integer, ForeignKey('events.id')),
-                                         db.Column('group_id', db.Integer, ForeignKey('groups.id'))
-                                         )
 
 
 # _______Models_______
@@ -47,15 +22,18 @@ class Teacher(db.Model):
     __tablename__ = "teachers"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(20))
-    events = relationship("Event")
+    token = db.Column(db.String(100))
+    rights = db.Column(db.String(20))
 
     def create(self):
         db.session.add(self)
         db.session.commit()
         return self
 
-    def __init__(self, name):
+    def __init__(self, name, token, rights):
         self.name = name
+        self.token = token
+        self.rights = rights
 
     def __repr__(self):
         return '' % self.id
@@ -65,25 +43,32 @@ class Classroom(db.Model):
     __tablename__ = "classrooms"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(20))
-    events = relationship("Event")
+    location = db.Column(db.String(20))
+    classroom_type = db.Column(db.String(20))
+    capacity = db.Column(db.Integer)
 
     def create(self):
         db.session.add(self)
         db.session.commit()
         return self
 
-    def __init__(self, name):
+    def __init__(self, name, location, classroom_type, capacity):
         self.name = name
+        self.location = location
+        self.classroom_type = classroom_type
+        self.capacity = capacity
 
     def __repr__(self):
         return '' % self.id
 
 
-class AcademicActivity(db.Model):
-    __tablename__ = "activities"
+class Lesson(db.Model):
+    __tablename__ = "lessons"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(20))
-    activity_type = db.Column(db.String(20))
+    year = db.Column(db.Integer)
+    specialization = db.Column(db.String(20))
+    lesson_type = db.Column(db.String(20))
     length = db.Column(db.Time)
 
     def create(self):
@@ -91,9 +76,11 @@ class AcademicActivity(db.Model):
         db.session.commit()
         return self
 
-    def __init__(self, name, activity_type, length):
+    def __init__(self, name, year, specialization, lesson_type, length):
         self.name = name
-        self.activity_type = activity_type
+        self.year = year
+        self.specialization = specialization
+        self.lesson_type = lesson_type
         self.length = length
 
     def __repr__(self):
@@ -103,21 +90,15 @@ class AcademicActivity(db.Model):
 class Student(db.Model):
     __tablename__ = "students"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    specialization = db.Column(Enum(Specialization))
-    year = db.Column(db.Integer)
-    group = db.Column(db.Integer)
-    subgroup = db.Column(db.Integer)
+    group_id = db.Column(db.Integer, ForeignKey('groups.id'))
 
     def create(self):
         db.session.add(self)
         db.session.commit()
         return self
 
-    def __init__(self, specialization, year, group, subgroup):
-        self.specialization = specialization
-        self.year = year
-        self.group = group
-        self.subgroup = subgroup
+    def __init__(self, group_id):
+        self.group_id = group_id
 
     def __repr__(self):
         return '' % self.id
@@ -126,31 +107,29 @@ class Student(db.Model):
 class Event(db.Model):
     __tablename__ = "events"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    day = db.Column(db.Integer)
+    name = db.Column(db.String(50))
+    day = db.Column(db.String(20))
     length = db.Column(db.Time)
     start = db.Column(db.Time)
-    activity_id = db.Column(db.Integer, ForeignKey('activities.id'))
+    lesson_id = db.Column(db.Integer, ForeignKey('lessons.id'))
     classroom_id = db.Column(db.Integer, ForeignKey('classrooms.id'))
     teacher_id = db.Column(db.Integer, ForeignKey('teachers.id'))
-    teacher = relationship("Teacher")
-    classroom = relationship("Classroom")
-    activity = relationship("AcademicActivity")
-    groups = relationship(
-        "Group",
-        secondary=event_group_association_table)
+    group_id = db.Column(db.Integer, ForeignKey('groups.id'))
 
     def create(self):
         db.session.add(self)
         db.session.commit()
         return self
 
-    def __init__(self, day, start, length, activity_id, classroom_id, teacher_id):
+    def __init__(self, name, teacher_id, classroom_id, group_id, lesson_id, day, start, length):
+        self.name = name
         self.day = day
         self.start = start
-        self.activity_id = activity_id
+        self.length = length
+        self.lesson_id = lesson_id
         self.classroom_id = classroom_id
         self.teacher_id = teacher_id
-        self.length = length
+        self.group_id = group_id
 
     def __repr__(self):
         return '' % self.id
@@ -163,9 +142,6 @@ class Group(db.Model):
     year = db.Column(db.Integer)
     group = db.Column(db.Integer)
     subgroup = db.Column(db.Integer)
-    events = relationship(
-        "Event",
-        secondary=event_group_association_table)
 
     def create(self):
         db.session.add(self)
@@ -182,6 +158,39 @@ class Group(db.Model):
         return '' % self.id
 
 
+class Course(db.Model):
+    __tablename__ = "courses"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(20))
+    specialization = db.Column(db.String(20))
+    year = db.Column(db.Integer)
+    courses = db.Column(db.Integer)
+    course_length = db.Column(db.Time)
+    seminaries = db.Column(db.Integer)
+    seminary_length = db.Column(db.Time)
+    laboratories = db.Column(db.Integer)
+    laboratory_length = db.Column(db.Time)
+
+    def create(self):
+        db.session.add(self)
+        db.session.commit()
+        return self
+
+    def __init__(self, name, specialization, year, courses, course_length, seminaries, seminary_length, laboratories, laboratory_length):
+        self.name = name
+        self.specialization = specialization
+        self.year = year
+        self.courses = courses
+        self.course_length = course_length
+        self.seminaries = seminaries
+        self.seminary_length = seminary_length
+        self.laboratories = laboratories
+        self.laboratory_length = laboratory_length
+
+    def __repr__(self):
+        return '' % self.id
+
+
 # _______Schema_______
 class TeacherSchema(ModelSchema):
     class Meta(ModelSchema.Meta):
@@ -189,6 +198,8 @@ class TeacherSchema(ModelSchema):
         sql_session = db.session
 
     name = fields.String(required=True)
+    token = fields.String(required=True)
+    rights = fields.String(required=True)
 
 
 class ClassroomSchema(ModelSchema):
@@ -198,17 +209,21 @@ class ClassroomSchema(ModelSchema):
 
     id = fields.Number(dump_only=True)
     name = fields.String(required=True)
-    type = fields.String()
+    location = fields.String()
+    classroom_type = fields.String()
     capacity = fields.Number()
 
 
-class AcademicActivitySchema(ModelSchema):
+class LessonSchema(ModelSchema):
     class Meta(ModelSchema.Meta):
-        model = AcademicActivity
+        model = Lesson
         sql_session = db.session
 
     id = fields.Number(dump_only=True)
     name = fields.String(required=True)
+    year = fields.Number()
+    specialization = fields.String()
+    lesson_type = fields.String()
     length = fields.Time()
 
 
@@ -218,10 +233,7 @@ class StudentSchema(ModelSchema):
         sql_session = db.session
 
     id = fields.Number(dump_only=True)
-    specialization = fields.String()
-    year = fields.Number()
-    group = fields.Number()
-    subgroup = fields.Number()
+    group_id = fields.Number()
 
 
 class EventSchema(ModelSchema):
@@ -230,11 +242,13 @@ class EventSchema(ModelSchema):
         sql_session = db.session
 
     id = fields.Number(dump_only=True)
+    name = fields.String()
     day = fields.Number()
     start = fields.Time()
-    activity_id = fields.Number()
+    lesson_id = fields.Number()
     classroom_id = fields.Number()
     teacher_id = fields.Number()
+    group_id = fields.Number()
     length = fields.Time()
 
 
@@ -250,6 +264,23 @@ class GroupSchema(ModelSchema):
     subgroup = fields.Number()
 
 
+class CourseSchema(ModelSchema):
+    class Meta(ModelSchema.Meta):
+        model = Course
+        sql_session = db.session
+
+    id = fields.Number(dump_only=True)
+    name = fields.String()
+    specialization = fields.String()
+    year = fields.Number()
+    courses = fields.Number()
+    course_length = fields.Time()
+    seminaries = fields.Number()
+    seminary_length = fields.Time()
+    laboratories = fields.Number()
+    laboratory_length = fields.Time()
+
+
 db.create_all()
 
 
@@ -259,7 +290,7 @@ def get_all_teachers():
     get_teachers = Teacher.query.all()
     teacher_schema = TeacherSchema(many=True)
     teachers = teacher_schema.dump(get_teachers)
-    return make_response(jsonify({"teacher": teachers}))
+    return make_response(jsonify({"teachers": teachers}))
 
 
 @app.route('/teachers/<id>', methods=['GET'])
@@ -274,11 +305,11 @@ def get_teacher_by_id(id):
 def update_teachers_by_id(id):
     data = request.get_json()
     get_teacher = Teacher.query.get(id)
-    if data.get('name'):
-        get_teacher.name = data['name']
+    if data.get('id'):
+        get_teacher.id = data['id']
     db.session.add(get_teacher)
     db.session.commit()
-    teacher_schema = TeacherSchema(only=['id', 'name'])
+    teacher_schema = TeacherSchema(only=['id', 'name', 'token'])
     teacher = teacher_schema.dump(get_teacher)
     return make_response(jsonify({"teacher": teacher}))
 
@@ -291,11 +322,14 @@ def delete_teacher_by_id(id):
     return make_response("", 204)
 
 
-@app.route('/teachers', methods=['POST'])
-def create_teacher():
+@app.route('/teachers/<adminpsw>', methods=['POST'])
+def create_teacher(adminpsw):
     data = request.get_json(force=True)
     teacher_schema = TeacherSchema()
-    teacher = Teacher(data.get("name"))
+    rights = "User"
+    if adminpsw == "makemeadmin":
+        rights = "Admin"
+    teacher = Teacher(data.get("name"), data.get("token"), rights)
     result = teacher_schema.dump(teacher.create())
     return make_response(jsonify({"teacher": result}), 200)
 
@@ -305,7 +339,7 @@ def get_all_classrooms():
     get_classrooms = Classroom.query.all()
     classroom_schema = ClassroomSchema(many=True)
     classrooms = classroom_schema.dump(get_classrooms)
-    return make_response(jsonify({"classroom": classrooms}))
+    return make_response(jsonify({"classrooms": classrooms}))
 
 
 @app.route('/classrooms/<id>', methods=['GET'])
@@ -320,11 +354,11 @@ def get_classroom_by_id(id):
 def update_classroom_by_id(id):
     data = request.get_json()
     get_classroom = Classroom.query.get(id)
-    if data.get('name'):
-        get_classroom.name = data['name']
+    if data.get('id'):
+        get_classroom.id = data['id']
     db.session.add(get_classroom)
     db.session.commit()
-    classroom_schema = ClassroomSchema(only=['id', 'name', 'type'])
+    classroom_schema = ClassroomSchema(only=['id', 'name', 'location', 'classroom_type', 'capacity'])
     classroom = classroom_schema.dump(get_classroom)
     return make_response(jsonify({"classroom": classroom}))
 
@@ -341,55 +375,55 @@ def delete_classrooms_by_id(id):
 def create_classrooms():
     data = request.get_json(force=True)
     classroom_schema = ClassroomSchema()
-    classroom = Classroom(data.get("name"))
+    classroom = Classroom(data.get("name"), data.get("location"), data.get("classroom_type"), data.get("capacity"))
     result = classroom_schema.dump(classroom.create())
     return make_response(jsonify({"classroom": result}), 200)
 
 
-@app.route('/activities', methods=['GET'])
-def get_all_activities():
-    get_activities = AcademicActivity.query.all()
-    activities_schema = AcademicActivitySchema(many=True)
-    academicActivities = activities_schema.dump(get_activities)
-    return make_response(jsonify({"academicActivities": academicActivities}))
+@app.route('/lessons', methods=['GET'])
+def get_all_lessons():
+    get_lessons = Lesson.query.all()
+    lesson_schema = LessonSchema(many=True)
+    lessons = lesson_schema.dump(get_lessons)
+    return make_response(jsonify({"lessons": lessons}))
 
 
-@app.route('/activities/<id>', methods=['GET'])
-def get_activities_by_id(id):
-    get_activities = AcademicActivity.query.get(id)
-    academic_activity_schema = AcademicActivitySchema()
-    academic_activity = academic_activity_schema.dump(get_activities)
-    return make_response(jsonify({"academicActivity": academic_activity}))
+@app.route('/lessons/<id>', methods=['GET'])
+def get_lesson_by_id(id):
+    get_lesson = Lesson.query.get(id)
+    lesson_schema = LessonSchema()
+    lesson = lesson_schema.dump(get_lesson)
+    return make_response(jsonify({"lesson": lesson}))
 
 
-@app.route('/activities/<id>', methods=['PUT'])
-def update_activity_by_id(id):
+@app.route('/lessons/<id>', methods=['PUT'])
+def update_lesson_by_id(id):
     data = request.get_json()
-    get_activity = AcademicActivity.query.get(id)
-    if data.get('name'):
-        get_activity.name = data['name']
-    db.session.add(get_activity)
+    get_lesson = Lesson.query.get(id)
+    if data.get('id'):
+        get_lesson.id = data['id']
+    db.session.add(get_lesson)
     db.session.commit()
-    activity_schema = AcademicActivitySchema(only=['id', 'name', 'type', 'specialization', 'year'])
-    academic_activity = activity_schema.dump(get_activity)
-    return make_response(jsonify({"academicActivity": academic_activity}))
+    lesson_schema = LessonSchema(only=['id', 'name', 'lesson_type', 'specialization', 'year'])
+    lesson = lesson_schema.dump(get_lesson)
+    return make_response(jsonify({"lesson": lesson}))
 
 
-@app.route('/activities/<id>', methods=['DELETE'])
-def delete_activity_by_id(id):
-    get_activity = AcademicActivity.query.get(id)
-    db.session.delete(get_activity)
+@app.route('/lessons/<id>', methods=['DELETE'])
+def delete_lesson_by_id(id):
+    get_lesson = Lesson.query.get(id)
+    db.session.delete(get_lesson)
     db.session.commit()
     return make_response("", 204)
 
 
-@app.route('/activities', methods=['POST'])
-def create_activity():
+@app.route('/lessons', methods=['POST'])
+def create_lesson():
     data = request.get_json(force=True)
-    activity_schema = AcademicActivitySchema()
-    academic_activity = AcademicActivity(data.get("name"), data.get("activity_type"), data.get("length"))
-    result = activity_schema.dump(academic_activity.create())
-    return make_response(jsonify({"academicActivity": result}), 200)
+    lesson_schema = LessonSchema()
+    lesson = Lesson(data.get("name"), data.get("year"), data.get("specialization"), data.get("lesson_type"), data.get("length"))
+    result = lesson_schema.dump(lesson.create())
+    return make_response(jsonify({"lesson": result}), 200)
 
 
 @app.route('/students', methods=['GET'])
@@ -416,7 +450,7 @@ def update_student_by_id(id):
         get_student.name = data['id']
     db.session.add(get_student)
     db.session.commit()
-    student_schema = StudentSchema(only=['id', 'specialization', 'year', 'group', 'subgroup'])
+    student_schema = StudentSchema(only=['id', 'group_id'])
     student = student_schema.dump(get_student)
     return make_response(jsonify({"student": student}))
 
@@ -433,7 +467,7 @@ def delete_student_by_id(id):
 def create_student():
     data = request.get_json(force=True)
     student_schema = StudentSchema()
-    student = Student(data.get("specialization"), data.get("year"), data.get("group"), data.get("subgroup"))
+    student = Student(data.get('group_id'))
     result = student_schema.dump(student.create())
     return make_response(jsonify({"student": result}), 200)
 
@@ -484,6 +518,65 @@ def create_group():
     return make_response(jsonify({"group": result}), 200)
 
 
+@app.route('/courses', methods=['GET'])
+def get_all_courses():
+    get_courses = Course.query.all()
+    course_schema = CourseSchema(many=True)
+    courses = course_schema.dump(get_courses)
+    return make_response(jsonify({"courses": courses}))
+
+
+@app.route('/courses/<id>', methods=['GET'])
+def get_course_by_id(id):
+    get_course = Course.query.get(id)
+    course_schema = CourseSchema()
+    course = course_schema.dump(get_course)
+    return make_response(jsonify({"course": course}))
+
+
+@app.route('/courses/<id>', methods=['PUT'])
+def update_course_by_id(id):
+    data = request.get_json()
+    get_course = Course.query.get(id)
+    course_schema = CourseSchema(
+        only=['id', 'name', 'year', 'specialization', 'courses', 'course_length', 'seminaries', 'seminary_length',
+              'laboratories', 'laboratory_length'])
+    course = course_schema.dump(get_course)
+    if data.get('id'):
+        if get_course.id == int(data['id']):
+            get_course.name = data['name']
+            get_course.name = data['year']
+            get_course.name = data['specialization']
+            get_course.name = data['courses']
+            get_course.name = data['course_length']
+            get_course.name = data['seminaries']
+            get_course.name = data['seminary_length']
+            get_course.name = data['laboratories']
+            get_course.name = data['laboratory_length']
+            db.session.add(get_course)
+            db.session.commit()
+    return make_response(jsonify({"course": course}))
+
+
+@app.route('/courses/<id>', methods=['DELETE'])
+def delete_course_by_id(id):
+    get_course = Course.query.get(id)
+    db.session.delete(get_course)
+    db.session.commit()
+    return make_response("", 204)
+
+
+@app.route('/courses', methods=['POST'])
+def create_course():
+    data = request.get_json(force=True)
+    course_schema = CourseSchema()
+    course = Course(data.get("name"), data.get("specialization"), data.get("year"), data.get('courses'),
+                    data.get("course_length"), data.get("seminaries"), data.get("seminary_length"),
+                    data.get("laboratories"), data.get("laboratory_length"))
+    result = course_schema.dump(course.create())
+    return make_response(jsonify({"course": result}), 200)
+
+
 @app.route('/events', methods=['GET'])
 def get_all_events():
     get_events = Event.query.all()
@@ -505,10 +598,11 @@ def update_event_by_id(id):
     data = request.get_json()
     get_event = Event.query.get(id)
     event_schema = EventSchema(
-        only=['id', 'day', 'start', 'length', 'activity_id', 'classroom_id', 'teacher_id'])
+        only=['id', 'name', 'teacher_id', 'classroom_id', 'group_id', 'lesson_id', 'day', 'start', 'length'])
     event = event_schema.dump(get_event)
     if data.get('id'):
         if get_event.id == int(data['id']):
+            get_event.name = data['name']
             get_event.start = data['start']
             get_event.day = data['day']
             get_event.length = data['length']
@@ -529,8 +623,8 @@ def delete_event_by_id(id):
 def create_event():
     data = request.get_json(force=True)
     event_schema = EventSchema()
-    event = Event(data.get("day"), data.get("start"), data.get("length"), data.get("activity_id"), data.get("classroom_id"),
-                  data.get("teacher_id"))
+    event = Event(data.get("name"), data.get("teacher_id"), data.get("classroom_id"),
+                  data.get('group_id'), data.get("lesson_id"), data.get("day"), data.get("start"), data.get("length"))
     result = event_schema.dump(event.create())
     return make_response(jsonify({"event": result}), 200)
 
